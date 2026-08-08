@@ -1,25 +1,26 @@
-import React, { useEffect, useState } from "react";
-import { router, useLocalSearchParams } from "expo-router";
-import {
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
-import { Picker } from "@react-native-picker/picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { Picker } from "@react-native-picker/picker";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
+import {
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
 
 import {
-  getCustomers,
-  insertSale,
-  getSaleById,
-  updateSale,
+    getCustomers,
+    getSaleById,
+    insertSale,
+    updateSale,
 } from "../database/database";
+import { saveSaleToFirestore } from "../firebase/firestoreSync";
 
 type CustomerOption = {
   id: number;
@@ -53,10 +54,7 @@ export default function SalesScreen() {
       } catch (error) {
         console.error("Customer load error:", error);
 
-        Alert.alert(
-          "Error",
-          "Unable to load customers."
-        );
+        Alert.alert("Error", "Unable to load customers.");
       }
     }
 
@@ -84,20 +82,14 @@ export default function SalesScreen() {
       } catch (error) {
         console.error("Sale load error:", error);
 
-        Alert.alert(
-          "Error",
-          "Unable to load sale."
-        );
+        Alert.alert("Error", "Unable to load sale.");
       }
     }
 
     loadSale();
   }, [editingId]);
 
-  const handleChange = (
-    field: keyof typeof form,
-    value: string
-  ) => {
+  const handleChange = (field: keyof typeof form, value: string) => {
     setForm((previousForm) => ({
       ...previousForm,
       [field]: value,
@@ -106,26 +98,17 @@ export default function SalesScreen() {
 
   const handleSubmit = async () => {
     if (!form.customerId) {
-      Alert.alert(
-        "Missing Information",
-        "Please select a customer."
-      );
+      Alert.alert("Missing Information", "Please select a customer.");
       return;
     }
 
     if (!form.saleDate) {
-      Alert.alert(
-        "Missing Information",
-        "Please select a sale date."
-      );
+      Alert.alert("Missing Information", "Please select a sale date.");
       return;
     }
 
     if (!form.amount || Number(form.amount) <= 0) {
-      Alert.alert(
-        "Invalid Amount",
-        "Please enter a valid sale amount."
-      );
+      Alert.alert("Invalid Amount", "Please enter a valid sale amount.");
       return;
     }
 
@@ -137,26 +120,39 @@ export default function SalesScreen() {
           form.saleDate,
           Number(form.amount),
           form.paymentMethod,
-          form.notes
+          form.notes,
         );
+
+        await saveSaleToFirestore(editingId, {
+          customerId: Number(form.customerId),
+          saleDate: form.saleDate,
+          amount: Number(form.amount),
+          paymentMethod: form.paymentMethod,
+          notes: form.notes,
+        });
       } else {
-        await insertSale(
+        const result = await insertSale(
           Number(form.customerId),
           form.saleDate,
           Number(form.amount),
           form.paymentMethod,
-          form.notes
+          form.notes,
         );
+
+        await saveSaleToFirestore(Number(result.lastInsertRowId), {
+          customerId: Number(form.customerId),
+          saleDate: form.saleDate,
+          amount: Number(form.amount),
+          paymentMethod: form.paymentMethod,
+          notes: form.notes,
+        });
       }
 
       router.replace("/sales-list");
     } catch (error: any) {
       console.error("Sale save error:", error);
 
-      Alert.alert(
-        "Error",
-        error?.message ?? "Unable to save sale."
-      );
+      Alert.alert("Error", error?.message ?? "Unable to save sale.");
     }
   };
 
@@ -172,15 +168,8 @@ export default function SalesScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={handleBack}
-          >
-            <MaterialIcons
-              name="arrow-back"
-              size={25}
-              color="#2E8B57"
-            />
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back" size={25} color="#2E8B57" />
           </TouchableOpacity>
 
           <View style={styles.headerText}>
@@ -204,10 +193,7 @@ export default function SalesScreen() {
                 handleChange("customerId", String(value))
               }
             >
-              <Picker.Item
-                label="Select Customer"
-                value=""
-              />
+              <Picker.Item label="Select Customer" value="" />
 
               {customers.map((item) => (
                 <Picker.Item
@@ -237,11 +223,7 @@ export default function SalesScreen() {
 
           {showDatePicker && (
             <DateTimePicker
-              value={
-                form.saleDate
-                  ? new Date(form.saleDate)
-                  : new Date()
-              }
+              value={form.saleDate ? new Date(form.saleDate) : new Date()}
               mode="date"
               display="default"
               onChange={(_, selectedDate) => {
@@ -249,17 +231,13 @@ export default function SalesScreen() {
 
                 if (selectedDate) {
                   const year = selectedDate.getFullYear();
-                  const month = String(
-                    selectedDate.getMonth() + 1
-                  ).padStart(2, "0");
-                  const day = String(
-                    selectedDate.getDate()
-                  ).padStart(2, "0");
-
-                  handleChange(
-                    "saleDate",
-                    `${year}-${month}-${day}`
+                  const month = String(selectedDate.getMonth() + 1).padStart(
+                    2,
+                    "0",
                   );
+                  const day = String(selectedDate.getDate()).padStart(2, "0");
+
+                  handleChange("saleDate", `${year}-${month}-${day}`);
                 }
               }}
             />
@@ -272,9 +250,7 @@ export default function SalesScreen() {
             placeholder="0.00"
             keyboardType="decimal-pad"
             value={form.amount}
-            onChangeText={(text) =>
-              handleChange("amount", text)
-            }
+            onChangeText={(text) => handleChange("amount", text)}
           />
 
           <Text style={styles.label}>Payment Method</Text>
@@ -283,25 +259,13 @@ export default function SalesScreen() {
             <Picker
               selectedValue={form.paymentMethod}
               onValueChange={(value) =>
-                handleChange(
-                  "paymentMethod",
-                  String(value)
-                )
+                handleChange("paymentMethod", String(value))
               }
             >
               <Picker.Item label="Cash" value="Cash" />
-              <Picker.Item
-                label="Credit Card"
-                value="Credit Card"
-              />
-              <Picker.Item
-                label="Debit Card"
-                value="Debit Card"
-              />
-              <Picker.Item
-                label="Online"
-                value="Online"
-              />
+              <Picker.Item label="Credit Card" value="Credit Card" />
+              <Picker.Item label="Debit Card" value="Debit Card" />
+              <Picker.Item label="Online" value="Online" />
             </Picker>
           </View>
 
@@ -311,22 +275,13 @@ export default function SalesScreen() {
             style={[styles.input, styles.notesInput]}
             placeholder="Optional notes"
             value={form.notes}
-            onChangeText={(text) =>
-              handleChange("notes", text)
-            }
+            onChangeText={(text) => handleChange("notes", text)}
             multiline
             textAlignVertical="top"
           />
 
-          <TouchableOpacity
-            style={styles.button}
-            onPress={handleSubmit}
-          >
-            <MaterialIcons
-              name="save"
-              size={21}
-              color="#FFFFFF"
-            />
+          <TouchableOpacity style={styles.button} onPress={handleSubmit}>
+            <MaterialIcons name="save" size={21} color="#FFFFFF" />
 
             <Text style={styles.buttonText}>
               {isEditing ? "Update Sale" : "Save Sale"}

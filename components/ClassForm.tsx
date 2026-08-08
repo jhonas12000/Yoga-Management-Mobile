@@ -1,21 +1,22 @@
-import React, { useEffect, useState } from "react";
-import { router, useLocalSearchParams } from "expo-router";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-} from "react-native";
-import {
-  insertClass,
-  getClassById,
-  updateClass,
-  getInstructorNames,
-} from "../database/database";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
+import {
+    Alert,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
+import {
+    getClassById,
+    getInstructorNames,
+    insertClass,
+    updateClass,
+} from "../database/database";
+import { saveClassToFirestore } from "../firebase/firestoreSync";
 
 type Instructor = {
   id: number;
@@ -59,12 +60,8 @@ export default function ClassForm() {
               : "",
             date: yogaClass.date ?? "",
             time: yogaClass.time ?? "",
-            duration: yogaClass.duration
-              ? yogaClass.duration.toString()
-              : "",
-            capacity: yogaClass.capacity
-              ? yogaClass.capacity.toString()
-              : "",
+            duration: yogaClass.duration ? yogaClass.duration.toString() : "",
+            capacity: yogaClass.capacity ? yogaClass.capacity.toString() : "",
           });
         }
       } catch (error) {
@@ -89,10 +86,7 @@ export default function ClassForm() {
     loadInstructors();
   }, []);
 
-  const handleChange = (
-    field: keyof typeof form,
-    value: string
-  ) => {
+  const handleChange = (field: keyof typeof form, value: string) => {
     setForm((previousForm) => ({
       ...previousForm,
       [field]: value,
@@ -121,18 +115,12 @@ export default function ClassForm() {
     }
 
     if (!form.duration || Number(form.duration) <= 0) {
-      Alert.alert(
-        "Invalid Duration",
-        "Please enter a valid duration."
-      );
+      Alert.alert("Invalid Duration", "Please enter a valid duration.");
       return false;
     }
 
     if (!form.capacity || Number(form.capacity) <= 0) {
-      Alert.alert(
-        "Invalid Capacity",
-        "Please enter a valid capacity."
-      );
+      Alert.alert("Invalid Capacity", "Please enter a valid capacity.");
       return false;
     }
 
@@ -156,18 +144,38 @@ export default function ClassForm() {
           form.date,
           form.time.trim(),
           Number(form.duration),
-          Number(form.capacity)
+          Number(form.capacity),
         );
+
+        await saveClassToFirestore(editingClassId, {
+          classId: form.className.trim(),
+          title: form.className.trim(),
+          instructorId: Number(form.instructor),
+          date: form.date,
+          time: form.time.trim(),
+          duration: Number(form.duration),
+          capacity: Number(form.capacity),
+        });
       } else {
-        await insertClass(
+        const result = await insertClass(
           form.className.trim(),
           form.className.trim(),
           Number(form.instructor),
           form.date,
           form.time.trim(),
           Number(form.duration),
-          Number(form.capacity)
+          Number(form.capacity),
         );
+
+        await saveClassToFirestore(Number(result.lastInsertRowId), {
+          classId: form.className.trim(),
+          title: form.className.trim(),
+          instructorId: Number(form.instructor),
+          date: form.date,
+          time: form.time.trim(),
+          duration: Number(form.duration),
+          capacity: Number(form.capacity),
+        });
       }
 
       Alert.alert(
@@ -180,14 +188,11 @@ export default function ClassForm() {
             text: "OK",
             onPress: () => router.replace("/class-list"),
           },
-        ]
+        ],
       );
     } catch (error: any) {
       console.error("Unable to save class:", error);
-      Alert.alert(
-        "Error",
-        error?.message ?? "Unable to save the class."
-      );
+      Alert.alert("Error", error?.message ?? "Unable to save the class.");
     } finally {
       setIsSubmitting(false);
     }
@@ -209,14 +214,9 @@ export default function ClassForm() {
       <View style={styles.pickerContainer}>
         <Picker
           selectedValue={form.instructor}
-          onValueChange={(value) =>
-            handleChange("instructor", String(value))
-          }
+          onValueChange={(value) => handleChange("instructor", String(value))}
         >
-          <Picker.Item
-            label="Select Instructor"
-            value=""
-          />
+          <Picker.Item label="Select Instructor" value="" />
 
           {instructors.map((item) => (
             <Picker.Item
@@ -232,12 +232,7 @@ export default function ClassForm() {
         style={styles.input}
         onPress={() => setShowDatePicker(true)}
       >
-        <Text
-          style={[
-            styles.dateText,
-            !form.date && styles.placeholderText,
-          ]}
-        >
+        <Text style={[styles.dateText, !form.date && styles.placeholderText]}>
           {form.date || "Select Date"}
         </Text>
       </TouchableOpacity>
@@ -252,17 +247,13 @@ export default function ClassForm() {
 
             if (selectedDate) {
               const year = selectedDate.getFullYear();
-              const month = String(
-                selectedDate.getMonth() + 1
-              ).padStart(2, "0");
-              const day = String(
-                selectedDate.getDate()
-              ).padStart(2, "0");
-
-              handleChange(
-                "date",
-                `${year}-${month}-${day}`
+              const month = String(selectedDate.getMonth() + 1).padStart(
+                2,
+                "0",
               );
+              const day = String(selectedDate.getDate()).padStart(2, "0");
+
+              handleChange("date", `${year}-${month}-${day}`);
             }
           }}
         />
@@ -292,10 +283,7 @@ export default function ClassForm() {
       />
 
       <TouchableOpacity
-        style={[
-          styles.button,
-          isSubmitting && styles.disabledButton,
-        ]}
+        style={[styles.button, isSubmitting && styles.disabledButton]}
         onPress={handleSubmit}
         disabled={isSubmitting}
       >

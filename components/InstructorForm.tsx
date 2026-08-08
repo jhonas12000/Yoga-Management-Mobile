@@ -1,8 +1,6 @@
 import { Picker } from "@react-native-picker/picker";
-import {
-  router,
-  useLocalSearchParams,
-} from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+import { addDoc, collection } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import {
   Alert,
@@ -14,10 +12,13 @@ import {
 } from "react-native";
 
 import {
+  findDuplicateInstructorContact,
   getInstructorById,
   insertInstructor,
   updateInstructor,
 } from "../database/database";
+
+import { firestore } from "../firebase/firebaseConfig";
 
 const emptyForm = {
   firstName: "",
@@ -31,15 +32,17 @@ const emptyForm = {
 export default function InstructorForm() {
   const params = useLocalSearchParams<{ id?: string }>();
 
-  const instructorId = params.id
-    ? Number(params.id)
-    : null;
+  const instructorId = params.id ? Number(params.id) : null;
 
-  const isEditing =
-    instructorId !== null &&
-    !Number.isNaN(instructorId);
+  const isEditing = instructorId !== null && !Number.isNaN(instructorId);
 
   const [form, setForm] = useState(emptyForm);
+  const [errors, setErrors] = useState({
+    firstName: "",
+    lastName: "",
+    phone: "",
+    email: "",
+  });
   const [loading, setLoading] = useState(isEditing);
   const [saving, setSaving] = useState(false);
 
@@ -51,21 +54,15 @@ export default function InstructorForm() {
       }
 
       try {
-        const instructor =
-          await getInstructorById(instructorId);
+        const instructor = await getInstructorById(instructorId);
 
         if (!instructor) {
-          Alert.alert(
-            "Not Found",
-            "The instructor could not be found.",
-            [
-              {
-                text: "OK",
-                onPress: () =>
-                  router.replace("/instructor-list"),
-              },
-            ]
-          );
+          Alert.alert("Not Found", "The instructor could not be found.", [
+            {
+              text: "OK",
+              onPress: () => router.replace("/instructor-list"),
+            },
+          ]);
           return;
         }
 
@@ -75,15 +72,11 @@ export default function InstructorForm() {
           address: instructor.address ?? "",
           phone: instructor.phone ?? "",
           email: instructor.email ?? "",
-          preferredContact:
-            instructor.preferredContact ?? "email",
+          preferredContact: instructor.preferredContact ?? "email",
         });
       } catch (error) {
         console.error(error);
-        Alert.alert(
-          "Error",
-          "Failed to load the instructor."
-        );
+        Alert.alert("Error", "Failed to load the instructor.");
       } finally {
         setLoading(false);
       }
@@ -92,24 +85,85 @@ export default function InstructorForm() {
     loadInstructor();
   }, [instructorId, isEditing]);
 
-  const handleChange = (
-    field: keyof typeof form,
-    value: string
-  ) => {
+  const handleChange = (field: keyof typeof form, value: string) => {
     setForm((currentForm) => ({
       ...currentForm,
       [field]: value,
     }));
+
+    if (
+      field === "firstName" ||
+      field === "lastName" ||
+      field === "phone" ||
+      field === "email"
+    ) {
+      setErrors((currentErrors) => ({
+        ...currentErrors,
+        [field]: "",
+      }));
+    }
   };
 
   const handleSubmit = async () => {
     const firstName = form.firstName.trim();
     const lastName = form.lastName.trim();
+    const phone = form.phone.trim();
+    const email = form.email.trim();
 
-    if (!firstName || !lastName) {
+    const newErrors = {
+      firstName: "",
+      lastName: "",
+      phone: "",
+      email: "",
+    };
+
+    if (!firstName) {
+      newErrors.firstName = "First Name is required.";
+    }
+
+    if (!lastName) {
+      newErrors.lastName = "Last Name is required.";
+    }
+
+    const phoneDigits = phone.replace(/\D/g, "");
+
+    if (!phone) {
+      newErrors.phone = "Phone number is required.";
+    } else if (
+      !/^[+\d\s()-]+$/.test(phone) ||
+      phoneDigits.length < 7 ||
+      phoneDigits.length > 15
+    ) {
+      newErrors.phone = "Enter a valid phone number.";
+    }
+
+    if (!email) {
+      newErrors.email = "Email is required.";
+    } else if (!/^\S+@\S+\.\S+$/.test(email)) {
+      newErrors.email = "Enter a valid email address.";
+    }
+
+    setErrors(newErrors);
+
+    if (
+      newErrors.firstName ||
+      newErrors.lastName ||
+      newErrors.phone ||
+      newErrors.email
+    ) {
+      return;
+    }
+
+    const duplicateContact = await findDuplicateInstructorContact(
+      phone,
+      email,
+      isEditing ? (instructorId ?? undefined) : undefined,
+    );
+
+    if (duplicateContact) {
       Alert.alert(
-        "Missing Information",
-        "First name and last name are required."
+        "Already Registered",
+        `This ${duplicateContact} is already registered.`,
       );
       return;
     }
@@ -123,43 +177,43 @@ export default function InstructorForm() {
           firstName,
           lastName,
           form.address.trim(),
-          form.phone.trim(),
-          form.email.trim(),
-          form.preferredContact
+          phone,
+          email,
+          form.preferredContact,
         );
 
-        Alert.alert(
-          "Success",
-          "Instructor updated successfully!",
-          [
-            {
-              text: "OK",
-              onPress: () =>
-                router.replace("/instructor-list"),
-            },
-          ]
-        );
+        Alert.alert("Success", "Instructor updated successfully!", [
+          {
+            text: "OK",
+            onPress: () => router.replace("/instructor-list"),
+          },
+        ]);
       } else {
         await insertInstructor(
           firstName,
           lastName,
           form.address.trim(),
-          form.phone.trim(),
-          form.email.trim(),
-          form.preferredContact
+          phone,
+          email,
+          form.preferredContact,
         );
 
-        Alert.alert(
-          "Success",
-          "Instructor saved successfully!",
-          [
-            {
-              text: "OK",
-              onPress: () =>
-                router.back(),
-            },
-          ]
-        );
+        await addDoc(collection(firestore, "instructors"), {
+          firstName,
+          lastName,
+          address: form.address.trim(),
+          phone,
+          email,
+          preferredContact: form.preferredContact,
+          createdAt: new Date().toISOString(),
+        });
+
+        Alert.alert("Success", "Instructor saved successfully!", [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ]);
       }
     } catch (error) {
       console.error(error);
@@ -168,7 +222,7 @@ export default function InstructorForm() {
         "Error",
         isEditing
           ? "Failed to update instructor."
-          : "Failed to save instructor."
+          : "Failed to save instructor.",
       );
     } finally {
       setSaving(false);
@@ -178,9 +232,7 @@ export default function InstructorForm() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <Text style={styles.loadingText}>
-          Loading instructor...
-        </Text>
+        <Text style={styles.loadingText}>Loading instructor...</Text>
       </View>
     );
   }
@@ -188,94 +240,84 @@ export default function InstructorForm() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>
-        {isEditing
-          ? "Edit Instructor"
-          : "Add Instructor"}
+        {isEditing ? "Edit Instructor" : "Add Instructor"}
       </Text>
 
       <Text style={styles.label}>First Name</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, errors.firstName ? styles.inputError : null]}
         placeholder="First Name"
         value={form.firstName}
-        onChangeText={(text) =>
-          handleChange("firstName", text)
-        }
+        onChangeText={(text) => handleChange("firstName", text)}
       />
+
+      {errors.firstName ? (
+        <Text style={styles.errorText}>{errors.firstName}</Text>
+      ) : null}
 
       <Text style={styles.label}>Last Name</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, errors.lastName ? styles.inputError : null]}
         placeholder="Last Name"
         value={form.lastName}
-        onChangeText={(text) =>
-          handleChange("lastName", text)
-        }
+        onChangeText={(text) => handleChange("lastName", text)}
       />
+
+      {errors.lastName ? (
+        <Text style={styles.errorText}>{errors.lastName}</Text>
+      ) : null}
 
       <Text style={styles.label}>Address</Text>
       <TextInput
         style={styles.input}
         placeholder="Address"
         value={form.address}
-        onChangeText={(text) =>
-          handleChange("address", text)
-        }
+        onChangeText={(text) => handleChange("address", text)}
       />
 
       <Text style={styles.label}>Phone</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, errors.phone ? styles.inputError : null]}
         placeholder="Phone"
         keyboardType="phone-pad"
         value={form.phone}
-        onChangeText={(text) =>
-          handleChange("phone", text)
-        }
+        onChangeText={(text) => handleChange("phone", text)}
       />
+
+      {errors.phone ? (
+        <Text style={styles.errorText}>{errors.phone}</Text>
+      ) : null}
 
       <Text style={styles.label}>Email</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, errors.email ? styles.inputError : null]}
         placeholder="Email"
         keyboardType="email-address"
         autoCapitalize="none"
         value={form.email}
-        onChangeText={(text) =>
-          handleChange("email", text)
-        }
+        onChangeText={(text) => handleChange("email", text)}
       />
 
-      <Text style={styles.label}>
-        Preferred Contact
-      </Text>
+      {errors.email ? (
+        <Text style={styles.errorText}>{errors.email}</Text>
+      ) : null}
+
+      <Text style={styles.label}>Preferred Contact</Text>
 
       <View style={styles.pickerContainer}>
         <Picker
           selectedValue={form.preferredContact}
           onValueChange={(value) =>
-            handleChange(
-              "preferredContact",
-              String(value)
-            )
+            handleChange("preferredContact", String(value))
           }
         >
-          <Picker.Item
-            label="Email"
-            value="email"
-          />
-          <Picker.Item
-            label="Phone"
-            value="phone"
-          />
+          <Picker.Item label="Email" value="email" />
+          <Picker.Item label="Phone" value="phone" />
         </Picker>
       </View>
 
       <TouchableOpacity
-        style={[
-          styles.button,
-          saving && styles.disabledButton,
-        ]}
+        style={[styles.button, saving && styles.disabledButton]}
         onPress={handleSubmit}
         disabled={saving}
       >
@@ -351,5 +393,19 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 30,
     color: "#666666",
+  },
+
+  inputError: {
+    borderColor: "#EF4444",
+    borderWidth: 2,
+  },
+
+  errorText: {
+    color: "#EF4444",
+    fontSize: 13,
+    marginTop: -10,
+    marginBottom: 10,
+    marginLeft: 4,
+    fontWeight: "500",
   },
 });

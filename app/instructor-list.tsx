@@ -1,33 +1,26 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
-  router,
-  useFocusEffect,
-} from "expo-router";
-import React, {
-  useCallback,
-  useState,
-} from "react";
-import {
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 import {
-  deleteInstructor,
-  getInstructors,
-  Instructor,
+    deleteInstructor,
+    getInstructors,
+    Instructor,
 } from "../database/database";
 
 export default function InstructorListScreen() {
   const [search, setSearch] = useState("");
-  const [instructors, setInstructors] =
-    useState<Instructor[]>([]);
+  const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadInstructors = useCallback(async () => {
@@ -38,10 +31,7 @@ export default function InstructorListScreen() {
       setInstructors(data);
     } catch (error) {
       console.error(error);
-      Alert.alert(
-        "Error",
-        "Failed to load instructors."
-      );
+      Alert.alert("Error", "Failed to load instructors.");
     } finally {
       setLoading(false);
     }
@@ -50,22 +40,19 @@ export default function InstructorListScreen() {
   useFocusEffect(
     useCallback(() => {
       loadInstructors();
-    }, [loadInstructors])
+    }, [loadInstructors]),
   );
 
-  const filteredInstructors =
-    instructors.filter((item) => {
-      const searchableText = `
+  const filteredInstructors = instructors.filter((item) => {
+    const searchableText = `
         ${item.firstName}
         ${item.lastName}
         ${item.email ?? ""}
         ${item.phone ?? ""}
       `.toLowerCase();
 
-      return searchableText.includes(
-        search.trim().toLowerCase()
-      );
-    });
+    return searchableText.includes(search.trim().toLowerCase());
+  });
 
   const handleEdit = (id: number) => {
     router.push({
@@ -76,11 +63,8 @@ export default function InstructorListScreen() {
     });
   };
 
-  const handleDelete = (
-    instructor: Instructor
-  ) => {
-    const fullName =
-      `${instructor.firstName} ${instructor.lastName}`;
+  const handleDelete = (instructor: Instructor) => {
+    const fullName = `${instructor.firstName} ${instructor.lastName}`;
 
     Alert.alert(
       "Delete Instructor",
@@ -98,53 +82,32 @@ export default function InstructorListScreen() {
               await deleteInstructor(instructor.id);
 
               setInstructors((current) =>
-                current.filter(
-                  (item) =>
-                    item.id !== instructor.id
-                )
+                current.filter((item) => item.id !== instructor.id),
               );
 
-              Alert.alert(
-                "Deleted",
-                "Instructor deleted successfully."
-              );
+              Alert.alert("Deleted", "Instructor deleted successfully.");
             } catch (error) {
               console.error(error);
-              Alert.alert(
-                "Error",
-                "Failed to delete instructor."
-              );
+              Alert.alert("Error", "Failed to delete instructor.");
             }
           },
         },
-      ]
+      ],
     );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>
-            Instructors
-          </Text>
+          <Text style={styles.title}>Instructors</Text>
 
           <TouchableOpacity
             style={styles.addButton}
-            onPress={() =>
-              router.push("/instructors")
-            }
+            onPress={() => router.push("/instructors")}
           >
-            <MaterialIcons
-              name="add"
-              size={22}
-              color="#FFFFFF"
-            />
-            <Text style={styles.addText}>
-              Add
-            </Text>
+            <MaterialIcons name="add" size={22} color="#FFFFFF" />
+            <Text style={styles.addText}>Add</Text>
           </TouchableOpacity>
         </View>
 
@@ -157,9 +120,7 @@ export default function InstructorListScreen() {
         />
 
         {loading ? (
-          <Text style={styles.message}>
-            Loading instructors...
-          </Text>
+          <Text style={styles.message}>Loading instructors...</Text>
         ) : filteredInstructors.length === 0 ? (
           <Text style={styles.message}>
             {search.trim()
@@ -168,65 +129,46 @@ export default function InstructorListScreen() {
           </Text>
         ) : (
           filteredInstructors.map((item) => (
-            <View
-              key={item.id}
-              style={styles.card}
-            >
+            <View key={item.id} style={styles.card}>
               <View style={styles.avatar}>
-                <MaterialIcons
-                  name="person"
-                  size={34}
-                  color="#2E8B57"
-                />
+                <MaterialIcons name="person" size={34} color="#2E8B57" />
               </View>
 
               <View style={styles.details}>
                 <Text style={styles.name}>
-                  {item.firstName}{" "}
-                  {item.lastName}
+                  {item.firstName} {item.lastName}
                 </Text>
 
-                <Text
-                  style={styles.secondaryText}
-                  numberOfLines={1}
-                >
-                  {item.email ||
-                    "No email provided"}
-                </Text>
+                <View style={styles.contactRow}>
+                  <MaterialIcons name="email" size={16} color="#666666" />
+                  <Text style={styles.secondaryText} numberOfLines={1}>
+                    {item.email || "No email provided"}
+                  </Text>
+                </View>
 
-                <Text style={styles.phone}>
-                  {item.phone ||
-                    "No phone provided"}
-                </Text>
+                <View style={styles.contactRow}>
+                  <MaterialIcons name="phone" size={16} color="#2E8B57" />
+                  <Text style={styles.phone}>
+                    {item.phone || "No phone provided"}
+                  </Text>
+                </View>
               </View>
 
               <View style={styles.actions}>
                 <TouchableOpacity
                   style={styles.iconButton}
-                  onPress={() =>
-                    handleEdit(item.id)
-                  }
+                  onPress={() => handleEdit(item.id)}
                   accessibilityLabel={`Edit ${item.firstName}`}
                 >
-                  <MaterialIcons
-                    name="edit"
-                    size={23}
-                    color="#2E8B57"
-                  />
+                  <MaterialIcons name="edit" size={23} color="#2E8B57" />
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.iconButton}
-                  onPress={() =>
-                    handleDelete(item)
-                  }
+                  onPress={() => handleDelete(item)}
                   accessibilityLabel={`Delete ${item.firstName}`}
                 >
-                  <MaterialIcons
-                    name="delete"
-                    size={23}
-                    color="#D32F2F"
-                  />
+                  <MaterialIcons name="delete" size={23} color="#D32F2F" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -318,13 +260,19 @@ const styles = StyleSheet.create({
 
   secondaryText: {
     color: "#666666",
-    marginTop: 3,
+    marginLeft: 6,
   },
 
   phone: {
-    marginTop: 4,
+    marginLeft: 6,
     color: "#2E8B57",
     fontWeight: "600",
+  },
+
+  contactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
   },
 
   actions: {

@@ -1,26 +1,27 @@
-import React, { useEffect, useState } from "react";
-import { router, useLocalSearchParams, } from "expo-router";
-import {
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
-import { Picker } from "@react-native-picker/picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { Picker } from "@react-native-picker/picker";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
+import {
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
 
 import {
-  getClasses,
-  getCustomers,
-  insertAttendance,
-  getAttendanceById,
-  updateAttendance,
+    getAttendanceById,
+    getClasses,
+    getCustomers,
+    insertAttendance,
+    updateAttendance,
 } from "../database/database";
+import { saveAttendanceToFirestore } from "../firebase/firestoreSync";
 
 type ClassOption = {
   id: number;
@@ -34,10 +35,10 @@ type CustomerOption = {
 };
 
 export default function AttendanceScreen() {
-    const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id } = useLocalSearchParams<{ id?: string }>();
 
-    const editingId = id ? Number(id) : null;
-    const isEditing = editingId !== null;
+  const editingId = id ? Number(id) : null;
+  const isEditing = editingId !== null;
   const [classes, setClasses] = useState<ClassOption[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
 
@@ -55,16 +56,13 @@ export default function AttendanceScreen() {
     async function loadDropdownData() {
       try {
         const classData = await getClasses();
-        const customerData = await getCustomers();;
+        const customerData = await getCustomers();
 
         setClasses(classData as ClassOption[]);
         setCustomers(customerData as CustomerOption[]);
       } catch (error) {
         console.error("Unable to load attendance options:", error);
-        Alert.alert(
-          "Error",
-          "Unable to load classes or customers."
-        );
+        Alert.alert("Error", "Unable to load classes or customers.");
       }
     }
 
@@ -72,39 +70,32 @@ export default function AttendanceScreen() {
   }, []);
 
   useEffect(() => {
-  async function loadAttendanceRecord() {
-    if (!editingId) {
-      return;
-    }
-
-    try {
-      const record: any =
-        await getAttendanceById(editingId);
-
-      if (record) {
-        setForm({
-          classId: record.classId.toString(),
-          customerId: record.customerId.toString(),
-          attendanceDate: record.attendanceDate,
-          status: record.status,
-          notes: record.notes ?? "",
-        });
+    async function loadAttendanceRecord() {
+      if (!editingId) {
+        return;
       }
-    } catch (error) {
-      console.error(
-        "Unable to load attendance:",
-        error
-      );
+
+      try {
+        const record: any = await getAttendanceById(editingId);
+
+        if (record) {
+          setForm({
+            classId: record.classId.toString(),
+            customerId: record.customerId.toString(),
+            attendanceDate: record.attendanceDate,
+            status: record.status,
+            notes: record.notes ?? "",
+          });
+        }
+      } catch (error) {
+        console.error("Unable to load attendance:", error);
+      }
     }
-  }
 
-  loadAttendanceRecord();
-}, [editingId]);
+    loadAttendanceRecord();
+  }, [editingId]);
 
-  const handleChange = (
-    field: keyof typeof form,
-    value: string
-  ) => {
+  const handleChange = (field: keyof typeof form, value: string) => {
     setForm((previousForm) => ({
       ...previousForm,
       [field]: value,
@@ -112,61 +103,64 @@ export default function AttendanceScreen() {
   };
 
   const handleContinue = async () => {
-  if (!form.classId) {
-    Alert.alert(
-      "Missing Information",
-      "Please select a yoga class."
-    );
-    return;
-  }
-
-  if (!form.customerId) {
-    Alert.alert(
-      "Missing Information",
-      "Please select a customer."
-    );
-    return;
-  }
-
-  if (!form.attendanceDate) {
-    Alert.alert(
-      "Missing Information",
-      "Please select an attendance date."
-    );
-    return;
-  }
-
-  try {
-    if (editingId) {
-      await updateAttendance(
-        editingId,
-        Number(form.classId),
-        Number(form.customerId),
-        form.attendanceDate,
-        form.status,
-        form.notes
-      );
-    } else {
-      await insertAttendance(
-        Number(form.classId),
-        Number(form.customerId),
-        form.attendanceDate,
-        form.status,
-        form.notes
-      );
+    if (!form.classId) {
+      Alert.alert("Missing Information", "Please select a yoga class.");
+      return;
     }
 
-    router.replace("/attendance-list");
-  } catch (error: any) {
-    console.error("Attendance error:", error);
+    if (!form.customerId) {
+      Alert.alert("Missing Information", "Please select a customer.");
+      return;
+    }
 
-    Alert.alert(
-      "Error",
-      error?.message ??
-        "Unable to save attendance."
-    );
-  }
-};
+    if (!form.attendanceDate) {
+      Alert.alert("Missing Information", "Please select an attendance date.");
+      return;
+    }
+
+    try {
+      if (editingId) {
+        await updateAttendance(
+          editingId,
+          Number(form.classId),
+          Number(form.customerId),
+          form.attendanceDate,
+          form.status,
+          form.notes,
+        );
+
+        await saveAttendanceToFirestore(editingId, {
+          classId: Number(form.classId),
+          customerId: Number(form.customerId),
+          attendanceDate: form.attendanceDate,
+          status: form.status,
+          notes: form.notes,
+        });
+      } else {
+        const result = await insertAttendance(
+          Number(form.classId),
+          Number(form.customerId),
+          form.attendanceDate,
+          form.status,
+          form.notes,
+        );
+
+        await saveAttendanceToFirestore(Number(result.lastInsertRowId), {
+          classId: Number(form.classId),
+          customerId: Number(form.customerId),
+          attendanceDate: form.attendanceDate,
+          status: form.status,
+          notes: form.notes,
+        });
+      }
+
+      router.replace("/attendance-list");
+    } catch (error: any) {
+      console.error("Attendance error:", error);
+
+      Alert.alert("Error", error?.message ?? "Unable to save attendance.");
+    }
+  };
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -180,20 +174,13 @@ export default function AttendanceScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={handleBack}
-          >
-            <MaterialIcons
-              name="arrow-back"
-              size={25}
-              color="#2E8B57"
-            />
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back" size={25} color="#2E8B57" />
           </TouchableOpacity>
 
           <View style={styles.headerText}>
             <Text style={styles.title}>
-                {isEditing ? "Edit Attendance" : "Record Attendance"}
+              {isEditing ? "Edit Attendance" : "Record Attendance"}
             </Text>
 
             <Text style={styles.subtitle}>
@@ -208,14 +195,9 @@ export default function AttendanceScreen() {
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={form.classId}
-              onValueChange={(value) =>
-                handleChange("classId", String(value))
-              }
+              onValueChange={(value) => handleChange("classId", String(value))}
             >
-              <Picker.Item
-                label="Select Class"
-                value=""
-              />
+              <Picker.Item label="Select Class" value="" />
 
               {classes.map((item) => (
                 <Picker.Item
@@ -236,10 +218,7 @@ export default function AttendanceScreen() {
                 handleChange("customerId", String(value))
               }
             >
-              <Picker.Item
-                label="Select Customer"
-                value=""
-              />
+              <Picker.Item label="Select Customer" value="" />
 
               {customers.map((item) => (
                 <Picker.Item
@@ -260,8 +239,7 @@ export default function AttendanceScreen() {
             <Text
               style={[
                 styles.dateText,
-                !form.attendanceDate &&
-                  styles.placeholderText,
+                !form.attendanceDate && styles.placeholderText,
               ]}
             >
               {form.attendanceDate || "Select Date"}
@@ -271,9 +249,7 @@ export default function AttendanceScreen() {
           {showDatePicker && (
             <DateTimePicker
               value={
-                form.attendanceDate
-                  ? new Date(form.attendanceDate)
-                  : new Date()
+                form.attendanceDate ? new Date(form.attendanceDate) : new Date()
               }
               mode="date"
               display="default"
@@ -282,17 +258,13 @@ export default function AttendanceScreen() {
 
                 if (selectedDate) {
                   const year = selectedDate.getFullYear();
-                  const month = String(
-                    selectedDate.getMonth() + 1
-                  ).padStart(2, "0");
-                  const day = String(
-                    selectedDate.getDate()
-                  ).padStart(2, "0");
-
-                  handleChange(
-                    "attendanceDate",
-                    `${year}-${month}-${day}`
+                  const month = String(selectedDate.getMonth() + 1).padStart(
+                    2,
+                    "0",
                   );
+                  const day = String(selectedDate.getDate()).padStart(2, "0");
+
+                  handleChange("attendanceDate", `${year}-${month}-${day}`);
                 }
               }}
             />
@@ -303,24 +275,13 @@ export default function AttendanceScreen() {
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={form.status}
-              onValueChange={(value) =>
-                handleChange("status", String(value))
-              }
+              onValueChange={(value) => handleChange("status", String(value))}
             >
-              <Picker.Item
-                label="Present"
-                value="Present"
-              />
+              <Picker.Item label="Present" value="Present" />
 
-              <Picker.Item
-                label="Absent"
-                value="Absent"
-              />
+              <Picker.Item label="Absent" value="Absent" />
 
-              <Picker.Item
-                label="Late"
-                value="Late"
-              />
+              <Picker.Item label="Late" value="Late" />
             </Picker>
           </View>
 
@@ -330,25 +291,16 @@ export default function AttendanceScreen() {
             style={[styles.input, styles.notesInput]}
             placeholder="Optional notes"
             value={form.notes}
-            onChangeText={(text) =>
-              handleChange("notes", text)
-            }
+            onChangeText={(text) => handleChange("notes", text)}
             multiline
             textAlignVertical="top"
           />
 
-          <TouchableOpacity
-            style={styles.button}
-            onPress={handleContinue}
-          >
-            <MaterialIcons
-              name="check-circle"
-              size={21}
-              color="#FFFFFF"
-            />
+          <TouchableOpacity style={styles.button} onPress={handleContinue}>
+            <MaterialIcons name="check-circle" size={21} color="#FFFFFF" />
 
             <Text style={styles.buttonText}>
-             {isEditing ? "Update Attendance" : "Save Attendance"}
+              {isEditing ? "Update Attendance" : "Save Attendance"}
             </Text>
           </TouchableOpacity>
         </View>

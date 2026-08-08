@@ -1,21 +1,18 @@
-import React, { useCallback, useState } from "react";
-import { router, useFocusEffect } from "expo-router";
-import {
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
-
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
-  getCustomers,
-  deleteCustomer,
-} from "../database/database";
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
+
+import { deleteCustomer, getCustomers } from "../database/database";
 
 export default function CustomerListScreen() {
   const [search, setSearch] = useState("");
@@ -33,13 +30,13 @@ export default function CustomerListScreen() {
       }
 
       loadCustomers();
-    }, [])
+    }, []),
   );
 
   const filteredCustomers = customers.filter((item) =>
     `${item.firstName} ${item.lastName}`
       .toLowerCase()
-      .includes(search.toLowerCase())
+      .includes(search.toLowerCase()),
   );
 
   const handleDelete = (customer: any) => {
@@ -61,14 +58,13 @@ export default function CustomerListScreen() {
             setCustomers(data as any[]);
           },
         },
-      ]
+      ],
     );
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView>
-
         <View style={styles.header}>
           <Text style={styles.title}>Customers</Text>
 
@@ -76,11 +72,7 @@ export default function CustomerListScreen() {
             style={styles.addButton}
             onPress={() => router.push("/customers")}
           >
-            <MaterialIcons
-              name="add"
-              size={22}
-              color="#fff"
-            />
+            <MaterialIcons name="add" size={22} color="#fff" />
             <Text style={styles.addText}>Add</Text>
           </TouchableOpacity>
         </View>
@@ -94,16 +86,9 @@ export default function CustomerListScreen() {
         />
 
         {filteredCustomers.map((item) => (
-          <View
-            key={item.id}
-            style={styles.card}
-          >
+          <View key={item.id} style={styles.card}>
             <View style={styles.avatar}>
-              <MaterialIcons
-                name="person"
-                size={34}
-                color="#2E8B57"
-              />
+              <MaterialIcons name="person" size={34} color="#2E8B57" />
             </View>
 
             <View style={{ flex: 1 }}>
@@ -111,13 +96,15 @@ export default function CustomerListScreen() {
                 {item.firstName} {item.lastName}
               </Text>
 
-              <Text style={styles.email}>
-                {item.email}
-              </Text>
+              <View style={styles.contactRow}>
+                <MaterialIcons name="email" size={16} color="#666" />
+                <Text style={styles.email}>{item.email}</Text>
+              </View>
 
-              <Text style={styles.phone}>
-                {item.phone}
-              </Text>
+              <View style={styles.contactRow}>
+                <MaterialIcons name="phone" size={16} color="#2E8B57" />
+                <Text style={styles.phone}>{item.phone}</Text>
+              </View>
             </View>
 
             <View style={styles.actions}>
@@ -131,24 +118,14 @@ export default function CustomerListScreen() {
                   })
                 }
               >
-                <MaterialIcons
-                  name="edit"
-                  size={22}
-                  color="#2E8B57"
-                />
+                <MaterialIcons name="edit" size={22} color="#2E8B57" />
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={{ marginLeft: 12 }}
-                onPress={() =>
-                  handleDelete(item)
-                }
+                onPress={() => handleDelete(item)}
               >
-                <MaterialIcons
-                  name="delete"
-                  size={22}
-                  color="#D32F2F"
-                />
+                <MaterialIcons name="delete" size={22} color="#D32F2F" />
               </TouchableOpacity>
             </View>
           </View>
@@ -226,13 +203,19 @@ const styles = StyleSheet.create({
 
   email: {
     color: "#666",
-    marginTop: 3,
+    marginLeft: 6,
   },
 
   phone: {
-    marginTop: 4,
+    marginLeft: 6,
     color: "#2E8B57",
     fontWeight: "600",
+  },
+
+  contactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
   },
 
   actions: {

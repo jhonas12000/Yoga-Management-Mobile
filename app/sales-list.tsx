@@ -1,20 +1,18 @@
-import React, { useCallback, useState } from "react";
-import { router, useFocusEffect } from "expo-router";
-import {
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
-
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
-  getSales,
-  deleteSale,
-} from "../database/database";
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
+
+import { deleteSale, getSales } from "../database/database";
+import { deleteSaleFromFirestore } from "../firebase/firestoreSync";
 
 export default function SalesListScreen() {
   const [sales, setSales] = useState<any[]>([]);
@@ -31,7 +29,7 @@ export default function SalesListScreen() {
   useFocusEffect(
     useCallback(() => {
       loadSales();
-    }, [])
+    }, []),
   );
 
   const handleBack = () => {
@@ -57,18 +55,16 @@ export default function SalesListScreen() {
           onPress: async () => {
             try {
               await deleteSale(item.id);
+              await deleteSaleFromFirestore(item.id);
               await loadSales();
             } catch (error) {
               console.error("Delete sale error:", error);
 
-              Alert.alert(
-                "Error",
-                "Unable to delete sale."
-              );
+              Alert.alert("Error", "Unable to delete sale.");
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -76,15 +72,8 @@ export default function SalesListScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={handleBack}
-          >
-            <MaterialIcons
-              name="arrow-back"
-              size={25}
-              color="#2E8B57"
-            />
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back" size={25} color="#2E8B57" />
           </TouchableOpacity>
 
           <View style={styles.headerText}>
@@ -99,11 +88,7 @@ export default function SalesListScreen() {
             style={styles.addButton}
             onPress={() => router.push("/sales")}
           >
-            <MaterialIcons
-              name="add"
-              size={22}
-              color="#FFFFFF"
-            />
+            <MaterialIcons name="add" size={22} color="#FFFFFF" />
 
             <Text style={styles.addText}>Add</Text>
           </TouchableOpacity>
@@ -111,53 +96,36 @@ export default function SalesListScreen() {
 
         {sales.length === 0 ? (
           <View style={styles.emptyCard}>
-            <MaterialIcons
-              name="payments"
-              size={55}
-              color="#2E8B57"
-            />
+            <MaterialIcons name="payments" size={55} color="#2E8B57" />
 
-            <Text style={styles.emptyTitle}>
-              No Sales Records
-            </Text>
+            <Text style={styles.emptyTitle}>No Sales Records</Text>
 
-            <Text style={styles.emptyText}>
-              Tap Add to record a new sale.
-            </Text>
+            <Text style={styles.emptyText}>Tap Add to record a new sale.</Text>
           </View>
         ) : (
           sales.map((item) => (
             <View key={item.id} style={styles.card}>
               <View style={styles.cardIcon}>
-                <MaterialIcons
-                  name="attach-money"
-                  size={28}
-                  color="#2E8B57"
-                />
+                <MaterialIcons name="attach-money" size={28} color="#2E8B57" />
               </View>
 
               <View style={styles.cardContent}>
                 <Text style={styles.customerName}>
-                  {item.customerFirstName}{" "}
-                  {item.customerLastName}
+                  {item.customerFirstName} {item.customerLastName}
                 </Text>
 
                 <Text style={styles.amount}>
                   ${Number(item.amount).toFixed(2)}
                 </Text>
 
-                <Text style={styles.details}>
-                  Date: {item.saleDate}
-                </Text>
+                <Text style={styles.details}>Date: {item.saleDate}</Text>
 
                 <Text style={styles.details}>
                   Payment: {item.paymentMethod}
                 </Text>
 
                 {item.notes ? (
-                  <Text style={styles.notes}>
-                    Notes: {item.notes}
-                  </Text>
+                  <Text style={styles.notes}>Notes: {item.notes}</Text>
                 ) : null}
               </View>
 
@@ -172,22 +140,14 @@ export default function SalesListScreen() {
                     })
                   }
                 >
-                  <MaterialIcons
-                    name="edit"
-                    size={23}
-                    color="#2E8B57"
-                  />
+                  <MaterialIcons name="edit" size={23} color="#2E8B57" />
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.deleteButton}
                   onPress={() => handleDelete(item)}
                 >
-                  <MaterialIcons
-                    name="delete"
-                    size={23}
-                    color="#D32F2F"
-                  />
+                  <MaterialIcons name="delete" size={23} color="#D32F2F" />
                 </TouchableOpacity>
               </View>
             </View>

@@ -1,20 +1,18 @@
-import React, { useCallback, useState } from "react";
-import { router, useFocusEffect } from "expo-router";
-import {
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
-
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
-  getAttendance,
-  deleteAttendance,
-} from "../database/database";
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
+
+import { deleteAttendance, getAttendance } from "../database/database";
+import { deleteAttendanceFromFirestore } from "../firebase/firestoreSync";
 
 export default function AttendanceListScreen() {
   const [attendance, setAttendance] = useState<any[]>([]);
@@ -31,7 +29,7 @@ export default function AttendanceListScreen() {
   useFocusEffect(
     useCallback(() => {
       loadAttendance();
-    }, [])
+    }, []),
   );
 
   const handleBack = () => {
@@ -57,17 +55,15 @@ export default function AttendanceListScreen() {
           onPress: async () => {
             try {
               await deleteAttendance(item.id);
+              await deleteAttendanceFromFirestore(item.id);
               await loadAttendance();
             } catch (error) {
               console.error(error);
-              Alert.alert(
-                "Error",
-                "Unable to delete attendance."
-              );
+              Alert.alert("Error", "Unable to delete attendance.");
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -75,15 +71,8 @@ export default function AttendanceListScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={handleBack}
-          >
-            <MaterialIcons
-              name="arrow-back"
-              size={25}
-              color="#2E8B57"
-            />
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <MaterialIcons name="arrow-back" size={25} color="#2E8B57" />
           </TouchableOpacity>
 
           <View style={styles.headerText}>
@@ -98,11 +87,7 @@ export default function AttendanceListScreen() {
             style={styles.addButton}
             onPress={() => router.push("/attendance")}
           >
-            <MaterialIcons
-              name="add"
-              size={22}
-              color="#FFFFFF"
-            />
+            <MaterialIcons name="add" size={22} color="#FFFFFF" />
 
             <Text style={styles.addText}>Add</Text>
           </TouchableOpacity>
@@ -110,15 +95,9 @@ export default function AttendanceListScreen() {
 
         {attendance.length === 0 ? (
           <View style={styles.emptyCard}>
-            <MaterialIcons
-              name="fact-check"
-              size={55}
-              color="#2E8B57"
-            />
+            <MaterialIcons name="fact-check" size={55} color="#2E8B57" />
 
-            <Text style={styles.emptyTitle}>
-              No Attendance Records
-            </Text>
+            <Text style={styles.emptyTitle}>No Attendance Records</Text>
 
             <Text style={styles.emptyText}>
               Tap Add to record attendance for a yoga class.
@@ -128,41 +107,26 @@ export default function AttendanceListScreen() {
           attendance.map((item) => (
             <View key={item.id} style={styles.card}>
               <View style={styles.cardIcon}>
-                <MaterialIcons
-                  name="person"
-                  size={28}
-                  color="#2E8B57"
-                />
+                <MaterialIcons name="person" size={28} color="#2E8B57" />
               </View>
 
               <View style={styles.cardContent}>
                 <Text style={styles.customerName}>
-                  {item.customerFirstName}{" "}
-                  {item.customerLastName}
+                  {item.customerFirstName} {item.customerLastName}
                 </Text>
 
-                <Text style={styles.className}>
-                  {item.classTitle}
-                </Text>
+                <Text style={styles.className}>{item.classTitle}</Text>
 
-                <Text style={styles.details}>
-                  Date: {item.attendanceDate}
-                </Text>
+                <Text style={styles.details}>Date: {item.attendanceDate}</Text>
 
                 <View style={styles.statusRow}>
-                  <Text style={styles.statusLabel}>
-                    Status:
-                  </Text>
+                  <Text style={styles.statusLabel}>Status:</Text>
 
-                  <Text style={styles.status}>
-                    {item.status}
-                  </Text>
+                  <Text style={styles.status}>{item.status}</Text>
                 </View>
 
                 {item.notes ? (
-                  <Text style={styles.notes}>
-                    Notes: {item.notes}
-                  </Text>
+                  <Text style={styles.notes}>Notes: {item.notes}</Text>
                 ) : null}
               </View>
 
@@ -177,22 +141,14 @@ export default function AttendanceListScreen() {
                     })
                   }
                 >
-                  <MaterialIcons
-                    name="edit"
-                    size={23}
-                    color="#2E8B57"
-                  />
+                  <MaterialIcons name="edit" size={23} color="#2E8B57" />
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.deleteButton}
                   onPress={() => handleDelete(item)}
                 >
-                  <MaterialIcons
-                    name="delete"
-                    size={23}
-                    color="#D32F2F"
-                  />
+                  <MaterialIcons name="delete" size={23} color="#D32F2F" />
                 </TouchableOpacity>
               </View>
             </View>

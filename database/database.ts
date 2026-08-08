@@ -2,6 +2,40 @@ import * as SQLite from "expo-sqlite";
 
 const db = SQLite.openDatabaseSync("yoga.db");
 
+/*
+=========================================================
+DATABASE QUEUE
+
+Prevents multiple SQLite operations from preparing
+statements at exactly the same time.
+=========================================================
+*/
+
+let databaseQueue: Promise<void> = Promise.resolve();
+
+function runDatabaseTask<T>(task: () => Promise<T>): Promise<T> {
+  const result = databaseQueue.then(task, task);
+
+  databaseQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+
+  return result;
+}
+
+function validateId(id: number, name: string) {
+  if (!Number.isFinite(id) || id <= 0) {
+    throw new Error(`Invalid ${name} id`);
+  }
+}
+
+/*
+=========================================================
+TYPES
+=========================================================
+*/
+
 export type Instructor = {
   id: number;
   firstName: string;
@@ -12,56 +46,82 @@ export type Instructor = {
   preferredContact: string | null;
 };
 
+export type Customer = {
+  id: number;
+  firstName: string;
+  lastName: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  preferredContact: string | null;
+};
+
+/*
+=========================================================
+DATABASE INITIALIZATION
+=========================================================
+*/
+
 export async function initializeDatabase() {
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS instructors (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      firstName TEXT NOT NULL,
-      lastName TEXT NOT NULL,
-      address TEXT,
-      phone TEXT,
-      email TEXT,
-      preferredContact TEXT
-    );
+  return runDatabaseTask(async () => {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS instructors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firstName TEXT NOT NULL,
+        lastName TEXT NOT NULL,
+        address TEXT,
+        phone TEXT,
+        email TEXT,
+        preferredContact TEXT
+      );
 
-    CREATE TABLE IF NOT EXISTS customers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      firstName TEXT NOT NULL,
-      lastName TEXT NOT NULL,
-      address TEXT,
-      phone TEXT,
-      email TEXT,
-      preferredContact TEXT
-    );
+      CREATE TABLE IF NOT EXISTS customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firstName TEXT NOT NULL,
+        lastName TEXT NOT NULL,
+        address TEXT,
+        phone TEXT,
+        email TEXT,
+        preferredContact TEXT
+      );
 
-    CREATE TABLE IF NOT EXISTS classes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      classId TEXT NOT NULL,
-      title TEXT NOT NULL,
-      instructorId INTEGER NOT NULL,
-      date TEXT NOT NULL,
-      time TEXT NOT NULL,
-      duration INTEGER NOT NULL,
-      capacity INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS attendance (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      classId INTEGER NOT NULL,
-      customerId INTEGER NOT NULL,
-      attendanceDate TEXT NOT NULL,
-      status TEXT NOT NULL,
-      notes TEXT
-    );
-    CREATE TABLE IF NOT EXISTS sales (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      customerId INTEGER NOT NULL,
-      saleDate TEXT NOT NULL,
-      amount REAL NOT NULL,
-      paymentMethod TEXT NOT NULL,
-      notes TEXT
-    );
-  `);
+      CREATE TABLE IF NOT EXISTS classes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        classId TEXT NOT NULL,
+        title TEXT NOT NULL,
+        instructorId INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        time TEXT NOT NULL,
+        duration INTEGER NOT NULL,
+        capacity INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS attendance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        classId INTEGER NOT NULL,
+        customerId INTEGER NOT NULL,
+        attendanceDate TEXT NOT NULL,
+        status TEXT NOT NULL,
+        notes TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS sales (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customerId INTEGER NOT NULL,
+        saleDate TEXT NOT NULL,
+        amount REAL NOT NULL,
+        paymentMethod TEXT NOT NULL,
+        notes TEXT
+      );
+    `);
+  });
 }
+
+/*
+=========================================================
+INSTRUCTORS
+=========================================================
+*/
 
 export async function insertInstructor(
   firstName: string,
@@ -69,45 +129,83 @@ export async function insertInstructor(
   address: string,
   phone: string,
   email: string,
-  preferredContact: string
+  preferredContact: string,
 ) {
-  return await db.runAsync(
-    `INSERT INTO instructors
-      (firstName, lastName, address, phone, email, preferredContact)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    firstName,
-    lastName,
-    address,
-    phone,
-    email,
-    preferredContact
+  return runDatabaseTask(() =>
+    db.runAsync(
+      `INSERT INTO instructors
+        (firstName, lastName, address, phone, email, preferredContact)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      firstName ?? "",
+      lastName ?? "",
+      address ?? "",
+      phone ?? "",
+      email ?? "",
+      preferredContact ?? "",
+    ),
   );
 }
 
 export async function getInstructors(): Promise<Instructor[]> {
-  return await db.getAllAsync(
-    "SELECT * FROM instructors ORDER BY id DESC"
+  return runDatabaseTask(() =>
+    db.getAllAsync<Instructor>("SELECT * FROM instructors ORDER BY id DESC"),
   );
 }
 
 export async function getInstructorNames() {
-  return await db.getAllAsync(
-    `SELECT
-       id,
-       firstName,
-       lastName
-     FROM instructors
-     ORDER BY firstName`
+  return runDatabaseTask(() =>
+    db.getAllAsync(
+      `SELECT
+         id,
+         firstName,
+         lastName
+       FROM instructors
+       ORDER BY firstName`,
+    ),
   );
 }
 
 export async function getInstructorById(
-  id: number
+  id: number,
 ): Promise<Instructor | null> {
-  return await db.getFirstAsync(
-    "SELECT * FROM instructors WHERE id = ?",
-    id
+  validateId(id, "instructor");
+
+  return runDatabaseTask(() =>
+    db.getFirstAsync<Instructor>("SELECT * FROM instructors WHERE id = ?", id),
   );
+}
+
+export async function findDuplicateInstructorContact(
+  phone: string,
+  email: string,
+  excludeId?: number,
+): Promise<"phone" | "email" | null> {
+  return runDatabaseTask(async () => {
+    const duplicate = await db.getFirstAsync<{
+      phone: string | null;
+      email: string | null;
+    }>(
+      `SELECT phone, email
+       FROM instructors
+       WHERE (phone = ? OR lower(email) = lower(?))
+         AND (? IS NULL OR id != ?)
+       LIMIT 1`,
+      phone,
+      email,
+      excludeId ?? null,
+      excludeId ?? null,
+    );
+
+    if (!duplicate) {
+      return null;
+    }
+
+    if (duplicate.phone === phone) {
+      return "phone";
+    }
+
+    return "email";
+  });
 }
 
 export async function updateInstructor(
@@ -117,72 +215,128 @@ export async function updateInstructor(
   address: string,
   phone: string,
   email: string,
-  preferredContact: string
+  preferredContact: string,
 ) {
-  return await db.runAsync(
-    `UPDATE instructors
-     SET firstName = ?,
-         lastName = ?,
-         address = ?,
-         phone = ?,
-         email = ?,
-         preferredContact = ?
-     WHERE id = ?`,
-    firstName,
-    lastName,
-    address,
-    phone,
-    email,
-    preferredContact,
-    id
+  validateId(id, "instructor");
+
+  return runDatabaseTask(() =>
+    db.runAsync(
+      `UPDATE instructors
+       SET firstName = ?,
+           lastName = ?,
+           address = ?,
+           phone = ?,
+           email = ?,
+           preferredContact = ?
+       WHERE id = ?`,
+      firstName ?? "",
+      lastName ?? "",
+      address ?? "",
+      phone ?? "",
+      email ?? "",
+      preferredContact ?? "",
+      id,
+    ),
   );
 }
 
 export async function deleteInstructor(id: number) {
-  return await db.runAsync(
-    "DELETE FROM instructors WHERE id = ?",
-    id
+  validateId(id, "instructor");
+
+  return runDatabaseTask(() =>
+    db.runAsync("DELETE FROM instructors WHERE id = ?", id),
   );
 }
 
-// Insert Customer
+/*
+=========================================================
+CUSTOMERS
+=========================================================
+*/
+
 export async function insertCustomer(
   firstName: string,
   lastName: string,
   address: string,
   phone: string,
   email: string,
-  preferredContact: string
+  preferredContact: string,
 ) {
-  return await db.runAsync(
-    `INSERT INTO customers
-      (firstName, lastName, address, phone, email, preferredContact)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    firstName,
-    lastName,
-    address,
-    phone,
-    email,
-    preferredContact
+  return runDatabaseTask(() =>
+    db.runAsync(
+      `INSERT INTO customers
+        (firstName, lastName, address, phone, email, preferredContact)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      firstName ?? "",
+      lastName ?? "",
+      address ?? "",
+      phone ?? "",
+      email ?? "",
+      preferredContact ?? "",
+    ),
   );
 }
 
-// Get Customers
-export async function getCustomers() {
-  return await db.getAllAsync(
-    "SELECT * FROM customers ORDER BY id DESC"
+export async function getCustomers(): Promise<Customer[]> {
+  return runDatabaseTask(() =>
+    db.getAllAsync<Customer>("SELECT * FROM customers ORDER BY id DESC"),
   );
 }
 
-// Get Customer by ID
-export async function getCustomerById(id: number) {
-  return await db.getFirstAsync(
-    "SELECT * FROM customers WHERE id = ?",
-    id
+export async function getCustomerNames() {
+  return runDatabaseTask(() =>
+    db.getAllAsync(
+      `SELECT
+         id,
+         firstName,
+         lastName
+       FROM customers
+       ORDER BY firstName`,
+    ),
   );
 }
 
-// Update Customer
+export async function getCustomerById(id: number): Promise<Customer | null> {
+  validateId(id, "customer");
+
+  return runDatabaseTask(() =>
+    db.getFirstAsync<Customer>("SELECT * FROM customers WHERE id = ?", id),
+  );
+}
+
+export async function findDuplicateCustomerContact(
+  phone: string,
+  email: string,
+  excludeId?: number,
+): Promise<"phone" | "email" | null> {
+  return runDatabaseTask(async () => {
+    const duplicate = await db.getFirstAsync<{
+      phone: string | null;
+      email: string | null;
+    }>(
+      `SELECT phone, email
+       FROM customers
+       WHERE (phone = ? OR lower(email) = lower(?))
+         AND (? IS NULL OR id != ?)
+       LIMIT 1`,
+      phone,
+      email,
+      excludeId ?? null,
+      excludeId ?? null,
+    );
+
+    if (!duplicate) {
+      return null;
+    }
+
+    if (duplicate.phone === phone) {
+      return "phone";
+    }
+
+    return "email";
+  });
+}
+
 export async function updateCustomer(
   id: number,
   firstName: string,
@@ -190,34 +344,44 @@ export async function updateCustomer(
   address: string,
   phone: string,
   email: string,
-  preferredContact: string
+  preferredContact: string,
 ) {
-  return await db.runAsync(
-    `UPDATE customers
-     SET firstName = ?,
-         lastName = ?,
-         address = ?,
-         phone = ?,
-         email = ?,
-         preferredContact = ?
-     WHERE id = ?`,
-    firstName,
-    lastName,
-    address,
-    phone,
-    email,
-    preferredContact,
-    id
+  validateId(id, "customer");
+
+  return runDatabaseTask(() =>
+    db.runAsync(
+      `UPDATE customers
+       SET firstName = ?,
+           lastName = ?,
+           address = ?,
+           phone = ?,
+           email = ?,
+           preferredContact = ?
+       WHERE id = ?`,
+      firstName ?? "",
+      lastName ?? "",
+      address ?? "",
+      phone ?? "",
+      email ?? "",
+      preferredContact ?? "",
+      id,
+    ),
   );
 }
 
-// Delete Customer
 export async function deleteCustomer(id: number) {
-  return await db.runAsync(
-    "DELETE FROM customers WHERE id = ?",
-    id
+  validateId(id, "customer");
+
+  return runDatabaseTask(() =>
+    db.runAsync("DELETE FROM customers WHERE id = ?", id),
   );
 }
+
+/*
+=========================================================
+CLASSES
+=========================================================
+*/
 
 export async function insertClass(
   classId: string,
@@ -226,32 +390,49 @@ export async function insertClass(
   date: string,
   time: string,
   duration: number,
-  capacity: number
+  capacity: number,
 ) {
-  return await db.runAsync(
-    `INSERT INTO classes
-      (classId, title, instructorId, date, time, duration, capacity)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    classId,
-    title,
-    instructorId,
-    date,
-    time,
-    duration,
-    capacity
+  validateId(instructorId, "instructor");
+
+  return runDatabaseTask(() =>
+    db.runAsync(
+      `INSERT INTO classes
+        (classId, title, instructorId, date, time, duration, capacity)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      classId ?? "",
+      title ?? "",
+      instructorId,
+      date ?? "",
+      time ?? "",
+      Number(duration) || 0,
+      Number(capacity) || 0,
+    ),
   );
 }
 
 export async function getClasses() {
-  return await db.getAllAsync(
-    "SELECT * FROM classes ORDER BY id DESC"
+  return runDatabaseTask(() =>
+    db.getAllAsync("SELECT * FROM classes ORDER BY id DESC"),
+  );
+}
+
+export async function getClassNames() {
+  return runDatabaseTask(() =>
+    db.getAllAsync(
+      `SELECT
+         id,
+         title
+       FROM classes
+       ORDER BY title`,
+    ),
   );
 }
 
 export async function getClassById(id: number) {
-  return await db.getFirstAsync(
-    "SELECT * FROM classes WHERE id = ?",
-    id
+  validateId(id, "class");
+
+  return runDatabaseTask(() =>
+    db.getFirstAsync("SELECT * FROM classes WHERE id = ?", id),
   );
 }
 
@@ -263,97 +444,100 @@ export async function updateClass(
   date: string,
   time: string,
   duration: number,
-  capacity: number
+  capacity: number,
 ) {
-  return await db.runAsync(
-    `UPDATE classes
-     SET classId = ?,
-         title = ?,
-         instructorId = ?,
-         date = ?,
-         time = ?,
-         duration = ?,
-         capacity = ?
-     WHERE id = ?`,
-    classId,
-    title,
-    instructorId,
-    date,
-    time,
-    duration,
-    capacity,
-    id
+  validateId(id, "class");
+  validateId(instructorId, "instructor");
+
+  return runDatabaseTask(() =>
+    db.runAsync(
+      `UPDATE classes
+       SET classId = ?,
+           title = ?,
+           instructorId = ?,
+           date = ?,
+           time = ?,
+           duration = ?,
+           capacity = ?
+       WHERE id = ?`,
+      classId ?? "",
+      title ?? "",
+      instructorId,
+      date ?? "",
+      time ?? "",
+      Number(duration) || 0,
+      Number(capacity) || 0,
+      id,
+    ),
   );
 }
 
 export async function deleteClass(id: number) {
-  return await db.runAsync(
-    "DELETE FROM classes WHERE id = ?",
-    id
-  );
-}
-export async function getCustomerNames() {
-  return await db.getAllAsync(
-    `SELECT
-        id,
-        firstName,
-        lastName
-     FROM customers
-     ORDER BY firstName`
+  validateId(id, "class");
+
+  return runDatabaseTask(() =>
+    db.runAsync("DELETE FROM classes WHERE id = ?", id),
   );
 }
 
-export async function getClassNames() {
-  return await db.getAllAsync(
-    `SELECT
-        id,
-        title
-     FROM classes
-     ORDER BY title`
-  );
-}
+/*
+=========================================================
+ATTENDANCE
+=========================================================
+*/
+
 export async function insertAttendance(
   classId: number,
   customerId: number,
   attendanceDate: string,
   status: string,
-  notes: string
+  notes: string,
 ) {
-  return await db.runAsync(
-    `INSERT INTO attendance
-      (classId, customerId, attendanceDate, status, notes)
-     VALUES (?, ?, ?, ?, ?)`,
-    classId,
-    customerId,
-    attendanceDate,
-    status,
-    notes
+  validateId(classId, "class");
+  validateId(customerId, "customer");
+
+  return runDatabaseTask(() =>
+    db.runAsync(
+      `INSERT INTO attendance
+        (classId, customerId, attendanceDate, status, notes)
+       VALUES (?, ?, ?, ?, ?)`,
+      classId,
+      customerId,
+      attendanceDate ?? "",
+      status ?? "Present",
+      notes ?? "",
+    ),
   );
 }
+
 export async function getAttendance() {
-  return await db.getAllAsync(`
-    SELECT
-      attendance.id,
-      attendance.classId,
-      attendance.customerId,
-      attendance.attendanceDate,
-      attendance.status,
-      attendance.notes,
-      classes.title AS classTitle,
-      customers.firstName AS customerFirstName,
-      customers.lastName AS customerLastName
-    FROM attendance
-    LEFT JOIN classes
-      ON attendance.classId = classes.id
-    LEFT JOIN customers
-      ON attendance.customerId = customers.id
-    ORDER BY attendance.id DESC
-  `);
+  return runDatabaseTask(() =>
+    db.getAllAsync(`
+      SELECT
+        attendance.id,
+        attendance.classId,
+        attendance.customerId,
+        attendance.attendanceDate,
+        attendance.status,
+        attendance.notes,
+        classes.title AS classTitle,
+        customers.firstName AS customerFirstName,
+        customers.lastName AS customerLastName
+      FROM attendance
+      LEFT JOIN classes
+        ON attendance.classId = classes.id
+      LEFT JOIN customers
+        ON attendance.customerId = customers.id
+      ORDER BY attendance.id DESC
+    `),
+  );
 }
+
 export async function getAttendanceById(id: number) {
-  return await db.getFirstAsync(
-    "SELECT * FROM attendance WHERE id = ?",
-    id
+  validateId(id, "attendance");
+
+  return runDatabaseTask(() =>
+    db.getFirstAsync("SELECT * FROM attendance WHERE id = ?", id),
   );
 }
 
@@ -363,72 +547,93 @@ export async function updateAttendance(
   customerId: number,
   attendanceDate: string,
   status: string,
-  notes: string
+  notes: string,
 ) {
-  return await db.runAsync(
-    `UPDATE attendance
-     SET classId = ?,
-         customerId = ?,
-         attendanceDate = ?,
-         status = ?,
-         notes = ?
-     WHERE id = ?`,
-    classId,
-    customerId,
-    attendanceDate,
-    status,
-    notes,
-    id
+  validateId(id, "attendance");
+  validateId(classId, "class");
+  validateId(customerId, "customer");
+
+  return runDatabaseTask(() =>
+    db.runAsync(
+      `UPDATE attendance
+       SET classId = ?,
+           customerId = ?,
+           attendanceDate = ?,
+           status = ?,
+           notes = ?
+       WHERE id = ?`,
+      classId,
+      customerId,
+      attendanceDate ?? "",
+      status ?? "Present",
+      notes ?? "",
+      id,
+    ),
   );
 }
 
 export async function deleteAttendance(id: number) {
-  return await db.runAsync(
-    "DELETE FROM attendance WHERE id = ?",
-    id
+  validateId(id, "attendance");
+
+  return runDatabaseTask(() =>
+    db.runAsync("DELETE FROM attendance WHERE id = ?", id),
   );
 }
+
+/*
+=========================================================
+SALES
+=========================================================
+*/
+
 export async function insertSale(
   customerId: number,
   saleDate: string,
   amount: number,
   paymentMethod: string,
-  notes: string
+  notes: string,
 ) {
-  return await db.runAsync(
-    `INSERT INTO sales
-      (customerId, saleDate, amount, paymentMethod, notes)
-     VALUES (?, ?, ?, ?, ?)`,
-    customerId,
-    saleDate,
-    amount,
-    paymentMethod,
-    notes
+  validateId(customerId, "customer");
+
+  return runDatabaseTask(() =>
+    db.runAsync(
+      `INSERT INTO sales
+        (customerId, saleDate, amount, paymentMethod, notes)
+       VALUES (?, ?, ?, ?, ?)`,
+      customerId,
+      saleDate ?? "",
+      Number(amount) || 0,
+      paymentMethod ?? "",
+      notes ?? "",
+    ),
   );
 }
 
 export async function getSales() {
-  return await db.getAllAsync(`
-    SELECT
-      sales.id,
-      sales.customerId,
-      sales.saleDate,
-      sales.amount,
-      sales.paymentMethod,
-      sales.notes,
-      customers.firstName AS customerFirstName,
-      customers.lastName AS customerLastName
-    FROM sales
-    LEFT JOIN customers
-      ON sales.customerId = customers.id
-    ORDER BY sales.id DESC
-  `);
+  return runDatabaseTask(() =>
+    db.getAllAsync(`
+      SELECT
+        sales.id,
+        sales.customerId,
+        sales.saleDate,
+        sales.amount,
+        sales.paymentMethod,
+        sales.notes,
+        customers.firstName AS customerFirstName,
+        customers.lastName AS customerLastName
+      FROM sales
+      LEFT JOIN customers
+        ON sales.customerId = customers.id
+      ORDER BY sales.id DESC
+    `),
+  );
 }
 
 export async function getSaleById(id: number) {
-  return await db.getFirstAsync(
-    "SELECT * FROM sales WHERE id = ?",
-    id
+  validateId(id, "sale");
+
+  return runDatabaseTask(() =>
+    db.getFirstAsync("SELECT * FROM sales WHERE id = ?", id),
   );
 }
 
@@ -438,68 +643,92 @@ export async function updateSale(
   saleDate: string,
   amount: number,
   paymentMethod: string,
-  notes: string
+  notes: string,
 ) {
-  return await db.runAsync(
-    `UPDATE sales
-     SET customerId = ?,
-         saleDate = ?,
-         amount = ?,
-         paymentMethod = ?,
-         notes = ?
-     WHERE id = ?`,
-    customerId,
-    saleDate,
-    amount,
-    paymentMethod,
-    notes,
-    id
+  validateId(id, "sale");
+  validateId(customerId, "customer");
+
+  return runDatabaseTask(() =>
+    db.runAsync(
+      `UPDATE sales
+       SET customerId = ?,
+           saleDate = ?,
+           amount = ?,
+           paymentMethod = ?,
+           notes = ?
+       WHERE id = ?`,
+      customerId,
+      saleDate ?? "",
+      Number(amount) || 0,
+      paymentMethod ?? "",
+      notes ?? "",
+      id,
+    ),
   );
 }
 
 export async function deleteSale(id: number) {
-  return await db.runAsync(
-    "DELETE FROM sales WHERE id = ?",
-    id
+  validateId(id, "sale");
+
+  return runDatabaseTask(() =>
+    db.runAsync("DELETE FROM sales WHERE id = ?", id),
   );
 }
-export async function getCustomerCount() {
-  const result: any = await db.getFirstAsync(
-    "SELECT COUNT(*) AS total FROM customers"
-  );
 
-  return result?.total ?? 0;
+/*
+=========================================================
+REPORTS
+=========================================================
+*/
+
+export async function getCustomerCount() {
+  return runDatabaseTask(async () => {
+    const result: any = await db.getFirstAsync(
+      "SELECT COUNT(*) AS total FROM customers",
+    );
+
+    return Number(result?.total ?? 0);
+  });
 }
 
 export async function getClassCount() {
-  const result: any = await db.getFirstAsync(
-    "SELECT COUNT(*) AS total FROM classes"
-  );
+  return runDatabaseTask(async () => {
+    const result: any = await db.getFirstAsync(
+      "SELECT COUNT(*) AS total FROM classes",
+    );
 
-  return result?.total ?? 0;
+    return Number(result?.total ?? 0);
+  });
 }
 
 export async function getAttendanceCount() {
-  const result: any = await db.getFirstAsync(
-    "SELECT COUNT(*) AS total FROM attendance"
-  );
+  return runDatabaseTask(async () => {
+    const result: any = await db.getFirstAsync(
+      "SELECT COUNT(*) AS total FROM attendance",
+    );
 
-  return result?.total ?? 0;
+    return Number(result?.total ?? 0);
+  });
 }
 
 export async function getSalesCount() {
-  const result: any = await db.getFirstAsync(
-    "SELECT COUNT(*) AS total FROM sales"
-  );
+  return runDatabaseTask(async () => {
+    const result: any = await db.getFirstAsync(
+      "SELECT COUNT(*) AS total FROM sales",
+    );
 
-  return result?.total ?? 0;
+    return Number(result?.total ?? 0);
+  });
 }
 
 export async function getTotalSalesRevenue() {
-  const result: any = await db.getFirstAsync(
-    "SELECT SUM(amount) AS total FROM sales"
-  );
+  return runDatabaseTask(async () => {
+    const result: any = await db.getFirstAsync(
+      "SELECT SUM(amount) AS total FROM sales",
+    );
 
-  return result?.total ?? 0;
+    return Number(result?.total ?? 0);
+  });
 }
+
 export default db;
